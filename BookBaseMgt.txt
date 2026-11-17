@@ -1,0 +1,649 @@
+/*BookBaseMgt、server/index*/
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>图书基础信息维护系统</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Microsoft Yahei", sans-serif;
+        }
+        body {
+            background-color: #f5f7fa;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 860px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        h3 {
+            text-align: center;
+            color: #2c3e50;
+            font-size: 22px;
+            margin-bottom: 24px;
+            padding-bottom:12px;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        /* 标签页样式 */
+        .tab-wrap{
+            display:flex;
+            border-bottom:1px solid #e8e8e8;
+            margin-bottom:20px;
+        }
+        .tab-item{
+            padding:10px 24px;
+            cursor:pointer;
+            border-bottom:2px solid transparent;
+            color:#666;
+        }
+        .tab-item.active{
+            border-bottom-color:#409eff;
+            color:#409eff;
+            font-weight:500;
+        }
+        .form-row {
+            display: flex;
+            align-items: center;
+            margin-bottom:16px;
+        }
+        label {
+            width: 110px;
+            color: #34495e;
+            font-weight: 500;
+        }
+        input {
+            flex: 1;
+            padding: 9px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            font-size:15px;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #409eff;
+        }
+        .btn-group {
+            margin: 20px 0;
+        }
+        button {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            font-size:14px;
+            cursor: pointer;
+            margin-right:8px;
+            transition: 0.2s;
+        }
+        .btn-primary {
+            background-color: #409eff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #337ecc;
+        }
+        .btn-success {
+            background-color: #67c23a;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #529b2e;
+        }
+        .btn-danger {
+            background-color: #f56c6c;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #dd6161;
+        }
+        .btn-warning {
+            background-color: #e6a23c;
+            color: white;
+        }
+        .btn-warning:hover {
+            background-color: #cf9236;
+        }
+        .btn-default {
+            background-color: #909399;
+            color: white;
+        }
+        .btn-default:hover {
+            background-color: #7a7d82;
+        }
+        .search-area {
+            background-color: #fafafa;
+            padding:16px;
+            border-radius:8px;
+            margin:20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top:10px;
+        }
+        th, td {
+            border:1px solid #ebeef5;
+            padding:12px 8px;
+            text-align:center;
+            font-size:15px;
+        }
+        th {
+            background-color: #f5f7fa;
+            color:#606266;
+            font-weight:500;
+        }
+        tr:hover {
+            background-color: #fafafa;
+        }
+        /* 分页 */
+        .page-wrap{
+            margin-top:16px;
+            text-align:right;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h3>图书基础信息维护系统</h3>
+
+    <!-- 标签切换：在架 / 已下架 -->
+    <div class="tab-wrap">
+        <div class="tab-item active" data-type="on">在架图书</div>
+        <div class="tab-item" data-type="off">已下架图书</div>
+    </div>
+/*
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+from urllib.parse import urlparse, parse_qs
+
+# 新增 is_deleted 字段，False=在架，True=已下架
+book_db = [
+    {
+        "bookId": "B001",
+        "bookName": "西游记",
+        "author": "吴承恩",
+        "publisher": "人民文学出版社",
+        "stock": 25,
+        "is_deleted": False
+    },
+    {
+        "bookId": "B002",
+        "bookName": "三国演义",
+        "author": "罗贯中",
+        "publisher": "中华书局",
+        "stock": 18,
+        "is_deleted": False
+    },
+    {
+        "bookId": "B003",
+        "bookName": "红楼梦",
+        "author": "曹雪芹",
+        "publisher": "上海古籍出版社",
+        "stock": 12,
+        "is_deleted": False
+    },
+    {
+        "bookId": "B004",
+        "bookName": "水浒传",
+        "author": "施耐庵",
+        "publisher": "人民文学出版社",
+        "stock": 20,
+        "is_deleted": False
+    },
+    {
+        "bookId": "B005",
+        "bookName": "朝花夕拾",
+        "author": "鲁迅",
+        "publisher": "浙江文艺出版社",
+        "stock": 15,
+        "is_deleted": False
+    }
+]
+
+class MyHandler(BaseHTTPRequestHandler):
+    def _set_headers(self, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json;charset=utf-8")
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html;charset=utf-8")
+            self.end_headers()
+            with open("index.html", "r", encoding="utf-8") as f:
+                self.wfile.write(f.read().encode("utf-8"))
+            return
+
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+
+        # 根据编号查询单本
+        if parsed.path == "/get":
+            bid = qs.get("bookId", [""])[0]
+            res = {"data": None, "msg": "未找到该图书"}
+            for b in book_db:
+                if b["bookId"] == bid:
+                    res["data"] = b
+                    break
+            self._set_headers()
+            self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # 分页+筛选：type=on  在架 / type=off 已下架；page页码，size每页数量
+        if parsed.path == "/search":
+            kw = qs.get("keyword", [""])[0].lower()
+            show_type = qs.get("type", ["on"])[0]
+            page = int(qs.get("page", ["1"])[0])
+            page_size = int(qs.get("size", ["6"])[0])
+
+            # 先过滤在架/下架
+            if show_type == "on":
+                filter_list = [b for b in book_db if b["is_deleted"] is False]
+            else:
+                filter_list = [b for b in book_db if b["is_deleted"] is True]
+            # 书名模糊搜索
+            if kw != "":
+                filter_list = [b for b in filter_list if kw in b["bookName"].lower()]
+            # 分页切片
+            total = len(filter_list)
+            start = (page - 1) * page_size
+            end = start + page_size
+            page_data = filter_list[start:end]
+            ret = {
+                "list": page_data,
+                "total": total,
+                "page": page,
+                "page_size": page_size
+            }
+            self._set_headers()
+            self.wfile.write(json.dumps(ret, ensure_ascii=False).encode("utf-8"))
+            return
+
+        self._set_headers(404)
+        self.wfile.write(json.dumps({"msg": "路径不存在"}, ensure_ascii=False).encode("utf-8"))
+
+    def do_POST(self):
+        length = int(self.headers["Content-Length"])
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body)
+
+        # 新增图书，默认在架 is_deleted=False
+        if self.path == "/add":
+            book_id = data.get("bookId", "").strip()
+            book_name = data.get("bookName", "").strip()
+            author = data.get("author", "").strip()
+            publisher = data.get("publisher", "").strip()
+            stock = data.get("stock")
+
+            if not book_id:
+                msg = "新增失败：图书编号不能为空"
+            elif not book_name:
+                msg = "新增失败：书名不能为空"
+            elif not author:
+                msg = "新增失败：作者不能为空"
+            elif not publisher:
+                msg = "新增失败：出版社不能为空"
+            elif stock is None or int(stock) <= 0:
+                msg = "新增失败：库存必须大于0"
+            elif any(b["bookId"] == book_id for b in book_db):
+                msg = "新增失败：该图书编号已存在"
+            else:
+                new_book = {
+                    "bookId": book_id,
+                    "bookName": book_name,
+                    "author": author,
+                    "publisher": publisher,
+                    "stock": int(stock),
+                    "is_deleted": False
+                }
+                book_db.append(new_book)
+                msg = "新增成功"
+            self._set_headers()
+            self.wfile.write(json.dumps({"msg": msg}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # 修改图书
+        if self.path == "/update":
+            book_id = data.get("bookId", "").strip()
+            book_name = data.get("bookName", "").strip()
+            author = data.get("author", "").strip()
+            publisher = data.get("publisher", "").strip()
+            stock = data.get("stock")
+
+            if not book_id:
+                msg = "修改失败：图书编号不能为空"
+            elif not book_name:
+                msg = "修改失败：书名不能为空"
+            elif not author:
+                msg = "修改失败：作者不能为空"
+            elif not publisher:
+                msg = "修改失败：出版社不能为空"
+            elif stock is None or int(stock) <= 0:
+                msg = "修改失败：库存必须大于0"
+            else:
+                find = False
+                for b in book_db:
+                    if b["bookId"] == book_id:
+                        b["bookName"] = book_name
+                        b["author"] = author
+                        b["publisher"] = publisher
+                        b["stock"] = int(stock)
+                        find = True
+                        break
+                if find:
+                    msg = "修改保存成功"
+                else:
+                    msg = "修改失败：不存在该编号图书"
+            self._set_headers()
+            self.wfile.write(json.dumps({"msg": msg}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # 软删除：标记下架 is_deleted=True
+        if self.path == "/soft_delete":
+            book_id = data.get("bookId", "").strip()
+            find = False
+            for b in book_db:
+                if b["bookId"] == book_id:
+                    b["is_deleted"] = True
+                    find = True
+                    break
+            if find:
+                msg = "已下架（软删除成功）"
+            else:
+                msg = "操作失败：没有该图书"
+            self._set_headers()
+            self.wfile.write(json.dumps({"msg": msg}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # 恢复上架：is_deleted=False
+        if self.path == "/restore":
+            book_id = data.get("bookId", "").strip()
+            find = False
+            for b in book_db:
+                if b["bookId"] == book_id:
+                    b["is_deleted"] = False
+                    find = True
+                    break
+            if find:
+                msg = "恢复上架成功"
+            else:
+                msg = "操作失败：没有该图书"
+            self._set_headers()
+            self.wfile.write(json.dumps({"msg": msg}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # 彻底删除（物理删除）
+        if self.path == "/hard_delete":
+            book_id = data.get("bookId", "").strip()
+            idx = -1
+            for i, b in enumerate(book_db):
+                if b["bookId"] == book_id:
+                    idx = i
+                    break
+            if idx != -1:
+                del book_db[idx]
+                msg = "彻底删除成功"
+            else:
+                msg = "操作失败：没有该图书"
+            self._set_headers()
+            self.wfile.write(json.dumps({"msg": msg}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        self._set_headers(404)
+        self.wfile.write(json.dumps({"msg": "路径不存在"}, ensure_ascii=False).encode("utf-8"))
+
+if __name__ == "__main__":
+    server = HTTPServer(("127.0.0.1", 8000), MyHandler)
+    print("服务器启动：http://127.0.0.1:8000")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.server_close()
+        print("服务器关闭")
+*/
+
+
+    <div class="form-row">
+        <label>图书编号：</label>
+        <input id="bookId">
+        <button class="btn-primary" onclick="queryById()">查询回显编辑</button>
+        <button class="btn-danger" onclick="softDelete()">下架（软删除）</button>
+    </div>
+    <div class="form-row">
+        <label>书名：</label>
+        <input id="bookName">
+    </div>
+    <div class="form-row">
+        <label>作者：</label>
+        <input id="author">
+    </div>
+    <div class="form-row">
+        <label>出版社：</label>
+        <input id="publisher">
+    </div>
+    <div class="form-row">
+        <label>库存：</label>
+        <input id="stock" type="number">
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-success" onclick="addBook()">新增图书</button>
+        <button class="btn-primary" onclick="updateBook()">保存修改</button>
+    </div>
+
+    <div class="search-area">
+        <div class="form-row" style="margin-bottom:0;">
+            <label>书名模糊查询：</label>
+            <input id="searchKey">
+            <button class="btn-primary" onclick="search()">查询</button>
+            <button class="btn-default" onclick="resetAll()">重置全部</button>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>图书编号</th>
+            <th>书名</th>
+            <th>作者</th>
+            <th>出版社</th>
+            <th>库存</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+    </table>
+    <div class="page-wrap" id="pageBox"></div>
+</div>
+
+<script>
+const base = "";
+let currentType = "on"; // on=在架 off=已下架
+let currentPage = 1;
+const pageSize = 6;
+
+// 标签点击切换
+document.querySelectorAll(".tab-item").forEach(tab=>{
+    tab.onclick = function(){
+        document.querySelectorAll(".tab-item").forEach(i=>i.classList.remove("active"));
+        this.classList.add("active");
+        currentType = this.dataset.type;
+        currentPage = 1;
+        renderList();
+    }
+})
+
+function getForm(){
+    return {
+        bookId: document.getElementById("bookId").value.trim(),
+        bookName: document.getElementById("bookName").value.trim(),
+        author: document.getElementById("author").value.trim(),
+        publisher: document.getElementById("publisher").value.trim(),
+        stock: document.getElementById("stock").value
+    }
+}
+
+// 软删除（下架）
+async function softDelete(){
+    let id = document.getElementById("bookId").value.trim();
+    if(!id){
+        alert("请先填入图书编号！");
+        return;
+    }
+    if(!confirm("确定下架这本书？下架后可以在【已下架图书】里恢复")) return;
+    let res = await fetch(base+"/soft_delete",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({bookId:id})
+    })
+    let json = await res.json();
+    alert(json.msg);
+    renderList();
+}
+
+// 恢复上架
+async function restoreBook(bookId){
+    if(!confirm("确定恢复上架？")) return;
+    let res = await fetch(base+"/restore",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({bookId:bookId})
+    })
+    let json = await res.json();
+    alert(json.msg);
+    renderList();
+}
+
+// 彻底物理删除
+async function hardDelete(bookId){
+    if(!confirm("⚠️ 警告：这是彻底删除，数据无法找回！确认吗？")) return;
+    let res = await fetch(base+"/hard_delete",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({bookId:bookId})
+    })
+    let json = await res.json();
+    alert(json.msg);
+    renderList();
+}
+
+async function addBook(){
+    let obj = getForm();
+    let res = await fetch(base+"/add",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(obj)
+    })
+    let json = await res.json();
+    alert(json.msg);
+    currentType = "on";
+    document.querySelector('[data-type="on"]').click();
+}
+
+async function queryById(){
+    let id = document.getElementById("bookId").value.trim();
+    if(!id){alert("请输入图书编号");return;}
+    let res = await fetch(base+"/get?bookId="+encodeURIComponent(id));
+    let json = await res.json();
+    if(!json.data){
+        alert(json.msg);
+        return;
+    }
+    document.getElementById("bookName").value = json.data.bookName;
+    document.getElementById("author").value = json.data.author;
+    document.getElementById("publisher").value = json.data.publisher;
+    document.getElementById("stock").value = json.data.stock;
+}
+
+async function updateBook(){
+    let obj = getForm();
+    let res = await fetch(base+"/update",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(obj)
+    })
+    let json = await res.json();
+    alert(json.msg);
+    renderList();
+}
+
+async function search(){
+    currentPage = 1;
+    renderList();
+}
+
+async function resetAll(){
+    document.getElementById("searchKey").value = "";
+    currentPage = 1;
+    renderList();
+}
+
+// 核心渲染：分页+标签筛选
+async function renderList(){
+    let kw = document.getElementById("searchKey").value.trim();
+    let res = await fetch(base+`/search?keyword=${encodeURIComponent(kw)}&type=${currentType}&page=${currentPage}&size=${pageSize}`);
+    let json = await res.json();
+    let list = json.list;
+    let total = json.total;
+    let tb = document.getElementById("tb");
+    tb.innerHTML="";
+    list.forEach(item=>{
+        let tr = document.createElement("tr");
+        let opHtml = "";
+        if(currentType === "on"){
+            opHtml = `<button class="btn-danger" onclick="softDeleteById('${item.bookId}')">下架</button>`
+        }else{
+            opHtml = `<button class="btn-success" onclick="restoreBook('${item.bookId}')">恢复上架</button>
+                      <button class="btn-warning" onclick="hardDelete('${item.bookId}')">彻底删除</button>`
+        }
+        tr.innerHTML=`<td>${item.bookId}</td>
+                      <td>${item.bookName}</td>
+                      <td>${item.author}</td>
+                      <td>${item.publisher}</td>
+                      <td>${item.stock}</td>
+                      <td>${opHtml}</td>`;
+        tb.appendChild(tr);
+    })
+    // 分页按钮
+    let pageBox = document.getElementById("pageBox");
+    let totalPage = Math.ceil(total / pageSize);
+    let pageHtml = `共 ${total} 条 &nbsp;&nbsp;`;
+    if(currentPage>1){
+        pageHtml += `<button onclick="goPage(${currentPage-1})">上一页</button>`
+    }
+    pageHtml += ` 第 ${currentPage} / ${totalPage||1} 页 `
+    if(currentPage < totalPage){
+        pageHtml += `<button onclick="goPage(${currentPage+1})">下一页</button>`
+    }
+    pageBox.innerHTML = pageHtml;
+}
+function goPage(p){
+    currentPage = p;
+    renderList();
+}
+// 单独给表格行的下架按钮
+async function softDeleteById(bookId){
+    if(!confirm("确定下架这本书？下架后可以在【已下架图书】里恢复")) return;
+    let res = await fetch(base+"/soft_delete",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({bookId:bookId})
+    })
+    let json = await res.json();
+    alert(json.msg);
+    renderList();
+}
+
+// 初始加载
+renderList();
+</script>
+</body>
+</html>

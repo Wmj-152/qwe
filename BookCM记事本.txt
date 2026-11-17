@@ -1,0 +1,493 @@
+/*import json
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import unquote, urlparse, parse_qs
+
+# ================= 内存数据模拟（不用数据库） =================
+categories = [
+    {"cid": "C01", "cname": "计算机", "remark": "计算机与信息技术类"},
+    {"cid": "C02", "cname": "文学", "remark": "中外文学作品"},
+    {"cid": "C03", "cname": "历史", "remark": "史学与人物传记"},
+    {"cid": "C04", "cname": "哲学", "remark": "哲学与宗教"},
+    {"cid": "C05", "cname": "经济学", "remark": "经济学与金融"},
+    {"cid": "C06", "cname": "艺术", "remark": "美术、音乐与设计"},
+    {"cid": "C07", "cname": "外语", "remark": "英语、日语等语种"},
+]
+
+# 图书数据只用于判断“分类是否被引用”
+books = [
+    {"bid": "B001", "title": "Python程序设计", "cid": "C01"},
+    {"bid": "B002", "title": "数据结构与算法", "cid": "C01"},
+    {"bid": "B003", "title": "红楼梦", "cid": "C02"},
+    {"bid": "B004", "title": "中国通史", "cid": "C03"},
+]
+
+
+def count_ref(cid):
+    """统计某分类被多少本图书引用"""
+    return len([b for b in books if b["cid"] == cid])
+
+
+def find_cat(cid):
+    """按编号查找分类"""
+    return next((c for c in categories if c["cid"] == cid), None)
+
+
+class Handler(BaseHTTPRequestHandler):
+
+    # ---------- 工具方法 ----------
+    def send_json(self, code, msg, data=None):
+        body = json.dumps({"code": code, "msg": msg, "data": data}, ensure_ascii=False)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return {}
+
+    # ---------- GET：页面 / 列表(含查询) / 单条回显 / 引用明细 ----------
+    def do_GET(self):
+        path = urlparse(self.path).path
+
+        if path == "/" or path == "/index.html":
+            html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+            if not os.path.exists(html_path):
+                self.send_json(1, "找不到 index.html，请与本文件放在同一目录")
+                return
+            with open(html_path, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        elif path == "/api/categories":
+            # 查询：按编号 / 名称 / 备注模糊匹配
+            kw = parse_qs(urlparse(self.path).query).get("kw", [""])[0].strip()
+            result = []
+            for c in categories:
+                if kw == "" or kw in c["cid"] or kw in c["cname"] or kw in c["remark"]:
+                    result.append({"cid": c["cid"], "cname": c["cname"],
+                                   "remark": c["remark"], "ref": count_ref(c["cid"])})
+            self.send_json(0, "查询成功", result)
+
+        elif path.startswith("/api/categories/") and path.endswith("/books"):
+            # 引用明细：该分类下有哪些图书
+            cid = unquote(path.split("/")[-2])
+            c = find_cat(cid)
+            if c is None:
+                self.send_json(1, "该分类不存在！")
+                return
+            ref_books = [{"bid": b["bid"], "title": b["title"]}
+                         for b in books if b["cid"] == cid]
+            self.send_json(0, "查询成功", {"cid": c["cid"], "cname": c["cname"],
+                                          "books": ref_books})
+
+        elif path.startswith("/api/categories/"):
+            # 编辑回显：按编号取单条
+            cid = unquote(path.split("/")[-1])
+            c = find_cat(cid)
+            if c is None:
+                self.send_json(1, "该分类不存在！")
+            else:
+                self.send_json(0, "查询成功", {"cid": c["cid"], "cname": c["cname"],
+                                              "remark": c["remark"], "ref": count_ref(cid)})
+
+        else:
+            self.send_json(1, "接口不存在")
+
+    # ---------- POST：新增分类 ----------
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/categories":
+            self.send_json(1, "接口不存在")
+            return
+        d = self.read_body()
+        cid = (d.get("cid") or "").strip()
+        cname = (d.get("cname") or "").strip()
+        remark = (d.get("remark") or "").strip()
+
+        # 参数合法性校验
+        if not cid or not cname:
+            self.send_json(1, "分类编号和分类名称不能为空！")
+        elif not cid.isalnum():
+            self.send_json(1, "分类编号只能是字母或数字！")
+        elif len(cid) > 10:
+            self.send_json(1, "分类编号不能超过10个字符！")
+        elif len(cname) > 20:
+            self.send_json(1, "分类名称不能超过20个字符！")
+        elif len(remark) > 50:
+            self.send_json(1, "备注不能超过50个字符！")
+        elif find_cat(cid) is not None:
+            self.send_json(1, "分类编号已存在，请重新录入！")
+        elif any(c["cname"] == cname for c in categories):
+            self.send_json(1, "分类名称已存在，请重新录入！")
+        else:
+            categories.append({"cid": cid, "cname": cname, "remark": remark})
+            self.send_json(0, "新增分类成功！")
+
+    # ---------- PUT：修改分类（按编号定位，保存更新） ----------
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        if not path.startswith("/api/categories/"):
+            self.send_json(1, "接口不存在")
+            return
+        cid = unquote(path.split("/")[-1])
+        c = find_cat(cid)
+        if c is None:
+            self.send_json(1, "该分类不存在，无法修改！")
+            return
+
+        d = self.read_body()
+        cname = (d.get("cname") or "").strip()
+        remark = (d.get("remark") or "").strip()
+
+        if not cname:
+            self.send_json(1, "分类名称不能为空！")
+        elif len(cname) > 20:
+            self.send_json(1, "分类名称不能超过20个字符！")
+        elif len(remark) > 50:
+            self.send_json(1, "备注不能超过50个字符！")
+        elif any(o["cname"] == cname and o["cid"] != cid for o in categories):
+            self.send_json(1, "分类名称已存在，请重新录入！")
+        else:
+            c["cname"] = cname
+            c["remark"] = remark
+            self.send_json(0, "修改分类成功！")
+
+    # ---------- DELETE：删除分类（未被引用才可删） ----------
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if not path.startswith("/api/categories/"):
+            self.send_json(1, "接口不存在")
+            return
+        cid = unquote(path.split("/")[-1])
+        target = find_cat(cid)
+        if target is None:
+            self.send_json(1, "该分类不存在，无法删除！")
+            return
+        ref = count_ref(cid)
+        if ref > 0:
+            self.send_json(1, "该分类已被 %d 本图书引用，不允许删除！" % ref)
+            return
+        categories.remove(target)
+        self.send_json(0, "删除分类[%s]成功！" % target["cname"])
+
+
+if __name__ == "__main__":
+    print("图书分类管理已启动： http://127.0.0.1:5000")
+    HTTPServer(("127.0.0.1", 5000), Handler).serve_forever()
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>图书分类管理</title>
+<style>
+body{
+    margin:0;padding:36px 16px;background:#eef3f9;
+    font-family:"Microsoft YaHei",Arial,sans-serif;font-size:14px;color:#333;
+}
+.container{
+    max-width:900px;margin:0 auto;background:#fff;
+    border:1px solid #cddceb;border-radius:6px;overflow:hidden;
+    box-shadow:0 2px 10px rgba(44,84,120,.10);
+}
+.header{
+    background:#3c6e9f;color:#fff;padding:15px 26px;font-size:20px;letter-spacing:1px;
+}
+.content{padding:24px 26px 28px}
+
+.formbox{
+    background:#f7fafd;border:1px solid #dce7f3;border-radius:4px;
+    padding:14px 16px;margin-bottom:12px;
+}
+.row{margin-bottom:10px}
+.row:last-child{margin-bottom:0}
+.formbox label{margin-right:4px;color:#3a5a78}
+input{
+    width:100px;padding:5px 8px;margin-right:8px;
+    border:1px solid #c4d4e4;border-radius:3px;font-size:14px;background:#fff;
+}
+input:focus{outline:none;border-color:#3c6e9f;box-shadow:0 0 0 2px #dbe8f5}
+input#cid:disabled{background:#eef3f8;color:#6b7f93}
+button{
+    padding:6px 16px;font-size:14px;border-radius:3px;cursor:pointer;
+    border:1px solid #3c6e9f;background:#3c6e9f;color:#fff;margin-right:6px;
+}
+button:hover{background:#2f5b85}
+button.light{background:#fff;color:#2f5b85}
+button.light:hover{background:#e8f0f8}
+
+#editTip{display:none;margin:0 0 10px;padding:7px 12px;
+    background:#fff6e5;border:1px solid #f0dcb4;border-radius:3px;color:#8a6413}
+#msg{min-height:20px;margin:0 0 10px;color:#2a7}
+
+table{width:100%;border-collapse:collapse;border:1px solid #c9d8e7}
+th{
+    background:#e6eff9;color:#2c5478;font-weight:bold;
+    border:1px solid #c9d8e7;padding:9px 12px;text-align:left;
+}
+td{border:1px solid #e0e9f3;padding:9px 12px}
+tbody tr:nth-child(even){background:#fafcfe}
+td.center{text-align:center}
+td button{padding:3px 12px;font-size:13px}
+.ref-link{
+    background:none;border:none;padding:0;margin:0;cursor:pointer;
+    color:#3c6e9f;text-decoration:underline;font-size:14px;
+}
+.ref-link:hover{background:none;color:#2f5b85}
+.ref-none{color:#999}
+
+/* 引用明细弹窗 */
+.mask{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.35)}
+.mask.show{display:flex;align-items:center;justify-content:center}
+.dialog{background:#fff;border-radius:6px;width:460px;max-width:92vw;overflow:hidden;
+    box-shadow:0 4px 18px rgba(0,0,0,.2)}
+.dialog .dh{background:#3c6e9f;color:#fff;padding:11px 18px;font-size:15px;
+    display:flex;justify-content:space-between;align-items:center}
+.dialog .dh span{cursor:pointer;font-size:16px;line-height:1}
+.dialog .db{padding:16px 18px 18px;font-size:14px}
+.dialog table{margin-top:10px;width:100%}
+.dialog th{background:#eef4fb;padding:6px 10px;font-weight:normal}
+.dialog td{padding:6px 10px}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">图书分类管理</div>
+
+    <div class="content">
+
+        <!-- 新增 / 修改 -->
+        <div class="formbox">
+            <div class="row">
+                <label>分类编号：</label><input id="cid" maxlength="10">
+                <label>分类名称：</label><input id="cname" maxlength="20">
+                <label>备注：</label><input id="remark" maxlength="50">
+            </div>
+            <div class="row">
+                <button id="btnSave" onclick="saveForm()">新增分类</button>
+                <button class="light" id="btnCancel" onclick="cancelEdit()" style="display:none">取消修改</button>
+            </div>
+        </div>
+
+        <!-- 查询 -->
+        <div class="formbox">
+            <div class="row">
+                <label>查询关键字：</label><input id="kw" maxlength="20" placeholder="编号/名称/备注">
+                <button onclick="loadList()">查询</button>
+                <button class="light" onclick="resetQuery()">显示全部</button>
+            </div>
+        </div>
+
+        <div id="editTip"></div>
+        <p id="msg"></p>
+
+        <table>
+            <tr>
+                <th>分类编号</th>
+                <th>分类名称</th>
+                <th>备注</th>
+                <th>引用数</th>
+                <th>操作</th>
+            </tr>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 引用明细弹窗 -->
+<div class="mask" id="mask" onclick="closeBooks(event)">
+    <div class="dialog" onclick="event.stopPropagation()">
+        <div class="dh">
+            <b id="dlgTitle">引用明细</b>
+            <span onclick="closeBooks()">×</span>
+        </div>
+        <div class="db" id="dlgBody"></div>
+    </div>
+</div>
+
+<script>
+var editCid = null;   // 当前正在修改的分类编号，null 表示新增状态
+
+function showMsg(text, ok) {
+    var el = document.getElementById("msg");
+    el.innerText = text;
+    el.style.color = ok ? "#2a7" : "#c33";
+}
+
+// ========== 列表 / 查询 ==========
+function loadList() {
+    var kw = document.getElementById("kw").value.trim();
+    fetch("/api/categories?kw=" + encodeURIComponent(kw))
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            var html = "";
+            if (res.data.length == 0) {
+                html = '<tr><td colspan="5" class="center">没有符合条件的分类</td></tr>';
+            } else {
+                res.data.forEach(function (c) {
+                    var refCell = c.ref > 0
+                        ? "<button class='ref-link' onclick=\"showBooks('" + c.cid + "')\">" + c.ref + "</button>"
+                        : "<span class='ref-none'>0</span>";
+                    html += "<tr>" +
+                        "<td>" + c.cid + "</td>" +
+                        "<td>" + c.cname + "</td>" +
+                        "<td>" + (c.remark || "") + "</td>" +
+                        "<td class='center'>" + refCell + "</td>" +
+                        "<td>" +
+                        "<button onclick=\"startEdit('" + c.cid + "')\">编辑</button>" +
+                        "<button onclick=\"delCategory('" + c.cid + "','" + c.cname + "')\">删除</button>" +
+                        "</td>" +
+                        "</tr>";
+                });
+            }
+            document.getElementById("tbody").innerHTML = html;
+        });
+}
+
+function resetQuery() {
+    document.getElementById("kw").value = "";
+    loadList();
+}
+
+// ========== 引用明细：点引用数看是哪些书 ==========
+function showBooks(cid) {
+    fetch("/api/categories/" + encodeURIComponent(cid) + "/books")
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (res.code != 0) { showMsg(res.msg, false); return; }
+            var d = res.data;
+            document.getElementById("dlgTitle").innerText =
+                "分类 " + d.cid + "（" + d.cname + "）的引用图书";
+
+            var html = "<div>共 " + d.books.length + " 本图书引用该分类：</div>";
+            if (d.books.length > 0) {
+                html += "<table><tr><th>图书编号</th><th>书名</th></tr>";
+                d.books.forEach(function (b) {
+                    html += "<tr><td>" + b.bid + "</td><td>" + b.title + "</td></tr>";
+                });
+                html += "</table>";
+            }
+            html += "<div style='margin-top:12px;color:#888'>该分类被图书引用期间不允许删除。</div>";
+            document.getElementById("dlgBody").innerHTML = html;
+            document.getElementById("mask").className = "mask show";
+        });
+}
+
+function closeBooks(e) {
+    document.getElementById("mask").className = "mask";
+}
+
+// ========== 新增 / 修改 保存 ==========
+function saveForm() {
+    var cid = document.getElementById("cid").value.trim();
+    var cname = document.getElementById("cname").value.trim();
+    var remark = document.getElementById("remark").value.trim();
+
+    if (editCid) {
+        // 修改保存
+        fetch("/api/categories/" + encodeURIComponent(editCid), {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({cname: cname, remark: remark})
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            showMsg(res.msg, res.code == 0);
+            if (res.code == 0) { cancelEdit(); loadList(); }
+        });
+    } else {
+        // 新增
+        if (!cid) { showMsg("分类编号不能为空！", false); return; }
+        fetch("/api/categories", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({cid: cid, cname: cname, remark: remark})
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            showMsg(res.msg, res.code == 0);
+            if (res.code == 0) {
+                document.getElementById("cid").value = "";
+                document.getElementById("cname").value = "";
+                document.getElementById("remark").value = "";
+                loadList();
+            }
+        });
+    }
+}
+
+// ========== 编辑：按编号回显 ==========
+function startEdit(cid) {
+    fetch("/api/categories/" + encodeURIComponent(cid))
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (res.code != 0) { showMsg(res.msg, false); return; }
+            var c = res.data;
+            editCid = c.cid;
+            document.getElementById("cid").value = c.cid;
+            document.getElementById("cid").disabled = true;
+            document.getElementById("cname").value = c.cname;
+            document.getElementById("remark").value = c.remark;
+            document.getElementById("btnSave").innerText = "保存修改";
+            document.getElementById("btnCancel").style.display = "inline-block";
+
+            var tip = document.getElementById("editTip");
+            tip.style.display = "block";
+            tip.innerText = "正在修改分类 " + c.cid + "（" + c.cname + "），编号不可修改，改完点“保存修改”。";
+            showMsg("已按编号回显该分类信息。", true);
+        });
+}
+
+function cancelEdit() {
+    editCid = null;
+    document.getElementById("cid").value = "";
+    document.getElementById("cid").disabled = false;
+    document.getElementById("cname").value = "";
+    document.getElementById("remark").value = "";
+    document.getElementById("btnSave").innerText = "新增分类";
+    document.getElementById("btnCancel").style.display = "none";
+    document.getElementById("editTip").style.display = "none";
+}
+
+
+// ========== 删除 ==========
+function delCategory(cid, cname) {
+    if (!confirm("确定删除分类「" + cname + "」吗？")) return;
+    fetch("/api/categories/" + encodeURIComponent(cid), {method: "DELETE"})
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            showMsg(res.msg, res.code == 0);
+            if (res.code == 0) {
+                if (editCid === cid) cancelEdit();
+                loadList();
+            }
+        });
+}
+
+loadList();
+</script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+import json
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import unquote, urlparse, parse_qs
+
+# ================= 内存数据模拟（不用数据库） =================
+categories = [
+    {"cid": "C01", "cname": "计算机", "remark": "计算机与信息技术类"},
+    {"cid": "C02", "cname": "文学", "remark": "中外文学作品"},
+    {"cid": "C03", "cname": "历史", "remark": "史学与人物传记"},
+    {"cid": "C04", "cname": "哲学", "remark": "哲学与宗教"},
+    {"cid": "C05", "cname": "经济学", "remark": "经济学与金融"},
+    {"cid": "C06", "cname": "艺术", "remark": "美术、音乐与设计"},
+    {"cid": "C07", "cname": "外语", "remark": "英语、日语等语种"},
+]
+
+# 图书数据只用于判断“分类是否被引用”
+books = [
+    {"bid": "B001", "title": "Python程序设计", "cid": "C01"},
+    {"bid": "B002", "title": "数据结构与算法", "cid": "C01"},
+    {"bid": "B003", "title": "红楼梦", "cid": "C02"},
+    {"bid": "B004", "title": "中国通史", "cid": "C03"},
+]
+
+
+def count_ref(cid):
+    """统计某分类被多少本图书引用"""
+    return len([b for b in books if b["cid"] == cid])
+
+
+def find_cat(cid):
+    """按编号查找分类"""
+    return next((c for c in categories if c["cid"] == cid), None)
+
+
+class Handler(BaseHTTPRequestHandler):
+
+    # ---------- 工具方法 ----------
+    def send_json(self, code, msg, data=None):
+        body = json.dumps({"code": code, "msg": msg, "data": data}, ensure_ascii=False)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return {}
+
+    # ---------- GET：页面 / 列表(含查询) / 单条回显 / 引用明细 ----------
+    def do_GET(self):
+        path = urlparse(self.path).path
+
+        if path == "/" or path == "/index.html":
+            html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+            if not os.path.exists(html_path):
+                self.send_json(1, "找不到 index.html，请与本文件放在同一目录")
+                return
+            with open(html_path, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        elif path == "/api/categories":
+            # 查询：按编号 / 名称 / 备注模糊匹配
+            kw = parse_qs(urlparse(self.path).query).get("kw", [""])[0].strip()
+            result = []
+            for c in categories:
+                if kw == "" or kw in c["cid"] or kw in c["cname"] or kw in c["remark"]:
+                    result.append({"cid": c["cid"], "cname": c["cname"],
+                                   "remark": c["remark"], "ref": count_ref(c["cid"])})
+            self.send_json(0, "查询成功", result)
+
+        elif path.startswith("/api/categories/") and path.endswith("/books"):
+            # 引用明细：该分类下有哪些图书
+            cid = unquote(path.split("/")[-2])
+            c = find_cat(cid)
+            if c is None:
+                self.send_json(1, "该分类不存在！")
+                return
+            ref_books = [{"bid": b["bid"], "title": b["title"]}
+                         for b in books if b["cid"] == cid]
+            self.send_json(0, "查询成功", {"cid": c["cid"], "cname": c["cname"],
+                                          "books": ref_books})
+
+        elif path.startswith("/api/categories/"):
+            # 编辑回显：按编号取单条
+            cid = unquote(path.split("/")[-1])
+            c = find_cat(cid)
+            if c is None:
+                self.send_json(1, "该分类不存在！")
+            else:
+                self.send_json(0, "查询成功", {"cid": c["cid"], "cname": c["cname"],
+                                              "remark": c["remark"], "ref": count_ref(cid)})
+
+        else:
+            self.send_json(1, "接口不存在")
+
+    # ---------- POST：新增分类 ----------
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/categories":
+            self.send_json(1, "接口不存在")
+            return
+        d = self.read_body()
+        cid = (d.get("cid") or "").strip()
+        cname = (d.get("cname") or "").strip()
+        remark = (d.get("remark") or "").strip()
+
+        # 参数合法性校验
+        if not cid or not cname:
+            self.send_json(1, "分类编号和分类名称不能为空！")
+        elif not cid.isalnum():
+            self.send_json(1, "分类编号只能是字母或数字！")
+        elif len(cid) > 10:
+            self.send_json(1, "分类编号不能超过10个字符！")
+        elif len(cname) > 20:
+            self.send_json(1, "分类名称不能超过20个字符！")
+        elif len(remark) > 50:
+            self.send_json(1, "备注不能超过50个字符！")
+        elif find_cat(cid) is not None:
+            self.send_json(1, "分类编号已存在，请重新录入！")
+        elif any(c["cname"] == cname for c in categories):
+            self.send_json(1, "分类名称已存在，请重新录入！")
+        else:
+            categories.append({"cid": cid, "cname": cname, "remark": remark})
+            self.send_json(0, "新增分类成功！")
+
+    # ---------- PUT：修改分类（按编号定位，保存更新） ----------
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        if not path.startswith("/api/categories/"):
+            self.send_json(1, "接口不存在")
+            return
+        cid = unquote(path.split("/")[-1])
+        c = find_cat(cid)
+        if c is None:
+            self.send_json(1, "该分类不存在，无法修改！")
+            return
+
+        d = self.read_body()
+        cname = (d.get("cname") or "").strip()
+        remark = (d.get("remark") or "").strip()
+
+        if not cname:
+            self.send_json(1, "分类名称不能为空！")
+        elif len(cname) > 20:
+            self.send_json(1, "分类名称不能超过20个字符！")
+        elif len(remark) > 50:
+            self.send_json(1, "备注不能超过50个字符！")
+        elif any(o["cname"] == cname and o["cid"] != cid for o in categories):
+            self.send_json(1, "分类名称已存在，请重新录入！")
+        else:
+            c["cname"] = cname
+            c["remark"] = remark
+            self.send_json(0, "修改分类成功！")
+
+    # ---------- DELETE：删除分类（未被引用才可删） ----------
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if not path.startswith("/api/categories/"):
+            self.send_json(1, "接口不存在")
+            return
+        cid = unquote(path.split("/")[-1])
+        target = find_cat(cid)
+        if target is None:
+            self.send_json(1, "该分类不存在，无法删除！")
+            return
+        ref = count_ref(cid)
+        if ref > 0:
+            self.send_json(1, "该分类已被 %d 本图书引用，不允许删除！" % ref)
+            return
+        categories.remove(target)
+        self.send_json(0, "删除分类[%s]成功！" % target["cname"])
+
+
+if __name__ == "__main__":
+    print("图书分类管理已启动： http://127.0.0.1:5000")
+    HTTPServer(("127.0.0.1", 5000), Handler).serve_forever()
